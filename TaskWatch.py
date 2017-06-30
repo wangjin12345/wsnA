@@ -2,10 +2,10 @@
 
 import matplotlib.pyplot as plt
 import gc
+import re
 import json
 from scipy.stats import f_oneway
-from scipy.stats import f as F
-import te_f_oneway
+
 
 class NodeLogcalls:
     ''' 参数为节点logcalls路径 '''
@@ -66,6 +66,7 @@ class NodeLogcalls:
         ''' 获得被调用的函数
         '''
         # called_func 的元素为所有被调用的函数名，没有重复
+        #print self.called_func; 
         return self.called_func
 
     def get_all_calledfunc_count(self, called_func, pure_calls):
@@ -148,6 +149,7 @@ class NodeLogcalls:
             else:
                 a.append(0)
         return a
+        
 
     def save_to_file(self, filename):
         with open(filename, 'w') as f:
@@ -157,9 +159,7 @@ class NodeLogcalls:
                                                   self.pure_calls)))
 
 
-
-# That function use the te_f_oneway as ANOVA analysis written by Zhang Te a nice people.
-def get_route_related_fun(nodes, func_name, time_gap, alpha=0.05):
+def get_route_related_fun(nodes, func_name, seg = 20, time_gap = None, alpha=0.05):
     ''' param: nodes     所有节点数据
         param: func_name 要判断的函数/任务名
         param: time_gap  统计的时间窗口大小(ms), 该参数决定样本容量
@@ -175,34 +175,11 @@ def get_route_related_fun(nodes, func_name, time_gap, alpha=0.05):
     all_statistic = list()
     for e in nodes.values():
         all_statistic.append(e.get_statistic_timewind(func_name, time_gap))
-    f = te_f_oneway.te_f_oneway(*all_statistic)
-
-    f_alpha = F.isf(alpha, len(all_statistic)-1, sum([len(e) for e in all_statistic])-len(all_statistic))
-
-    return True if f > f_alpha else False
-
-
-""" That function use the f_oneway as ANOVA analysis provided by scipy library.
-def get_route_related_fun(nodes, func_name, time_gap, alpha=0.05):
-    ''' param: nodes     所有节点数据
-        param: func_name 要判断的函数/任务名
-        param: time_gap  统计的时间窗口大小(ms), 该参数决定样本容量
-        param: alpha     显著水平
-
-        return: True     经过方差分析, 多组数据之间的差异具有统计学意义,
-                         即该函数的调用次数与组间因素(不同路由)的影响有关
-                False    反之
-
-        根据指定alpha返回某函数是否路由相关
-        该函数基于方差分析, 且没有进行方差齐检验
-    '''
-    all_statistic = list()
-    for e in nodes.values():
-        all_statistic.append(e.get_statistic_timewind(func_name, time_gap))
+        #print 'len = ', len(e.get_statistic_timewind(func_name, time_gap))
     f, p = f_oneway(*all_statistic)
     # print f, p
     return True if p < alpha else False
-"""
+
 
 def get_axs(num=140):
     ''' 获得指定数量的子图, 子图数量总是4的倍数 31857
@@ -219,10 +196,42 @@ def get_axs(num=140):
             axs.append(plt.subplot(24 * 10 + i))
     return axs
 
+def get_taskname(task_id):
+    with open(task_path,'r')as f:
+        src = f.read()
+    line = src.split('\n')
+    task_line = filter(lambda e: '__runTask()' in e , line)
+    task_withnote = map(lambda e: e.strip() , task_line)
+
+    for e in task_withnote:
+        if '*/' in e:
+            a = e.index('*/')+2
+            task_withnote[task_withnote.index(e)] = e[a:]
+
+    task_define = map(lambda e: e[:-12], task_withnote)
+    task_define = list(set(task_define))
+
+    task = list()
+
+    for e in  task_define:
+        for a in line:
+            if e + ' = ' in a:
+                task.append(a.strip())
+    
+    tmp = None
+    for i in task:
+        i = i.split(' ')
+        if(int(task_id, 16) == int(i[-1][:-1])):
+            tmp = i[0]
+        
+    return tmp
 
 if __name__ == '__main__':
-    path = "/media/tete/F/TinyOS/wsnA/logcalls-logs/"  # 数据路径
-    result_path = "C:/Users/Administrator/Desktop/tools/cooja/TaskCalls/result/5-result/"  # 结果路径
+    path = "C:/Users/Administrator/Desktop/wsnA-master/logcalls-logs/"  # 数据路径
+    #result_path = "C:/Users/Administrator/Desktop/tools/cooja/TaskCalls/result/5-result/"  # 结果路径
+    task_path= "C:/Users/Administrator/Desktop/wsnA-master/app.c";
+    
+
     node_amount = 2  #节点数量
     nodes = dict()  # 存储所有节点的NodeLogcalls实例
     for i in range(1, node_amount + 1):
@@ -238,16 +247,23 @@ if __name__ == '__main__':
     for e in nodes:
         foo = nodes[e].get_calledfunc()
         if len(foo) > most_func_node[most_func_node.keys()[0]]:
-            most_func_node = {e: len(foo)}
+            most_func_node = {e: len(foo)};
 
     print 'the number of total functions = ', most_func_node[
         most_func_node.keys()[0]]
     """ 获取调用函数最多节点的中被调用的所有函数 """
     allfunc = list()
     allfunc = nodes[most_func_node.keys()[0]].get_calledfunc()
+
     """  x坐标为节点编号, 本例为(1 - 40)"""
     x_nodes = [i for i in range(1, node_amount + 1)]
     y_logcalls = list()
-    ''' work prefect '''
+    
+    print '---- ANOVA ----'
+    """ work prefect """
     for e in nodes['node_1'].called_func:
-        print get_route_related_fun(nodes, e, 500)
+        #print '------', 
+        if get_route_related_fun(nodes, e, 20000):
+            print e, get_taskname(e)
+        print ''
+
